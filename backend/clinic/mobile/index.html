@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Clinic Records (read-only)</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --accent:#0f766e; --warn:#b91c1c; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1214; --card:#181c20; --ink:#e5e7eb; --muted:#9ca3af; --line:#2a2f35; --accent:#2dd4bf; --warn:#f87171; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  header { position:sticky; top:0; background:var(--card); border-bottom:1px solid var(--line); padding:12px 16px; display:flex; align-items:center; gap:8px; z-index:2; }
+  header h1 { font-size:16px; margin:0; flex:1; }
+  .badge { font-size:11px; color:var(--muted); border:1px solid var(--line); border-radius:99px; padding:2px 8px; }
+  main { padding:16px; max-width:720px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px; }
+  input { width:100%; padding:12px; font-size:16px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--ink); }
+  button { padding:11px 14px; font-size:15px; border-radius:10px; border:0; background:var(--accent); color:#fff; font-weight:600; }
+  button.link { background:none; color:var(--accent); padding:4px 0; font-weight:500; }
+  label { display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  .row { display:flex; justify-content:space-between; gap:8px; align-items:baseline; }
+  .muted { color:var(--muted); font-size:13px; }
+  .item { padding:12px 0; border-bottom:1px solid var(--line); cursor:pointer; }
+  .item:last-child { border-bottom:0; }
+  .allergy { color:var(--warn); font-weight:600; }
+  h2 { font-size:15px; margin:18px 0 8px; }
+  .k { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--accent); margin-top:8px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  td { padding:4px 4px 4px 0; vertical-align:top; border-bottom:1px solid var(--line); }
+  .err { color:var(--warn); margin-top:8px; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<header><h1 id="title">Clinic Records</h1><span class="badge">Read-only</span><button class="link" id="logout" hidden>Log out</button></header>
+<main id="app"></main>
+<script>
+(() => {
+  const app = document.getElementById('app');
+  let token = sessionStorage.getItem('cr_token') || '';
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const fmt = d => d ? new Date(d).toLocaleDateString(undefined, {day:'2-digit', month:'short', year:'numeric'}) : '';
+  async function api(path, opts={}) {
+    const r = await fetch(path, {...opts, headers: {'Content-Type':'application/json', ...(token ? {Authorization:'Bearer '+token} : {})}});
+    if (r.status === 401) { token=''; sessionStorage.removeItem('cr_token'); loginView(); throw new Error('Please log in'); }
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body.detail || ('Error '+r.status));
+    return body;
+  }
+  function loginView(msg='') {
+    document.getElementById('logout').hidden = true;
+    app.innerHTML = `<div class="card"><form id="f"><label>Username</label><input name="u" autocomplete="username" required>
+      <label>Password</label><input name="p" type="password" autocomplete="current-password" required>
+      <div style="margin-top:14px"><button>Log in</button></div><div class="err">${esc(msg)}</div></form></div>
+      <p class="muted">This page shows patient records read-only. Records can only be changed in the desktop app.</p>`;
+    document.getElementById('f').onsubmit = async e => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      try {
+        const r = await api('/api/auth/login', {method:'POST', body: JSON.stringify({username: fd.get('u'), password: fd.get('p'), scope:'mobile'})});
+        token = r.token; sessionStorage.setItem('cr_token', token); searchView();
+      } catch (err) { loginView(err.message); }
+    };
+  }
+  function searchView(q='') {
+    document.getElementById('logout').hidden = false;
+    app.innerHTML = `<input id="q" placeholder="Search name, P000123 or phone" value="${esc(q)}" autofocus><div id="res" class="card" style="margin-top:12px"></div>`;
+    const qi = document.getElementById('q');
+    let t;
+    const run = async () => {
+      const res = document.getElementById('res');
+      try {
+        const rows = await api('/api/mobile/patients?q=' + encodeURIComponent(qi.value));
+        res.innerHTML = rows.length ? rows.map(p => `<div class="item" data-id="${esc(p.id)}"><div class="row"><b>${esc(p.full_name)}</b><span class="muted">${esc(p.patient_number)}</span></div>
+          <div class="muted">${esc([p.age != null ? p.age+' y' : '', p.sex, p.phone].filter(Boolean).join(' · '))}</div></div>`).join('') : '<div class="muted">No patients found</div>';
+        res.querySelectorAll('.item').forEach(el => el.onclick = () => patientView(el.dataset.id, qi.value));
+      } catch (err) { res.innerHTML = `<div class="err">${esc(err.message)}</div>`; }
+    };
+    qi.oninput = () => { clearTimeout(t); t = setTimeout(run, 200); };
+    run();
+  }
+  async function patientView(id, q) {
+    app.innerHTML = '<div class="muted">Loading…</div>';
+    try {
+      const {patient: p, visits, documents} = await api('/api/mobile/patients/' + encodeURIComponent(id));
+      const tq = '?token=' + encodeURIComponent(token);
+      app.innerHTML = `<button class="link" id="back">← Back</button>
+        <div class="card"><div class="row"><h2 style="margin:0">${esc(p.full_name)}</h2><span class="muted">${esc(p.patient_number)}</span></div>
+        <div class="muted">${esc([p.age != null ? p.age+' y' : '', p.sex, p.blood_group, p.phone].filter(Boolean).join(' · '))}</div>
+        ${p.allergies ? `<div class="allergy" style="margin-top:6px">Allergies: ${esc(p.allergies)}</div>` : ''}
+        ${p.chronic_conditions ? `<div class="k">Chronic conditions</div><div>${esc(p.chronic_conditions)}</div>` : ''}</div>
+        <h2>Visits (${visits.length})</h2>
+        ${visits.map(v => `<div class="card"><div class="row"><b>${fmt(v.visit_date)}</b>${v.amends_id ? '<span class="badge">Amended</span>' : ''}</div>
+          ${v.chief_complaint ? `<div class="k">Complaints</div><div>${esc(v.chief_complaint)}</div>` : ''}
+          ${v.diagnosis ? `<div class="k">Diagnosis</div><div>${esc(v.diagnosis)}</div>` : ''}
+          ${v.prescription.items.length ? `<div class="k">Prescription</div><table>${v.prescription.items.map(i => `<tr><td><b>${esc(i.medicine_name)}</b></td><td>${esc(i.dose)}</td><td>${esc(i.frequency)}</td><td>${esc(i.duration)}</td></tr>`).join('')}</table>
+            <a href="/api/mobile/visits/${esc(v.id)}/prescription.pdf${tq}" target="_blank">Prescription PDF</a>` : ''}
+          ${v.advice ? `<div class="k">Advice</div><div>${esc(v.advice)}</div>` : ''}
+          ${v.follow_up_date ? `<div class="k">Follow-up</div><div>${fmt(v.follow_up_date)}</div>` : ''}</div>`).join('') || '<div class="muted">No visits</div>'}
+        <h2>Documents (${documents.length})</h2>
+        <div class="card">${documents.map(d => `<div class="item"><a href="/api/mobile/documents/${esc(d.id)}/file${tq}" target="_blank">${esc(d.title || d.original_filename)}</a>
+          <div class="muted">${esc(d.category)} · ${fmt(d.uploaded_at)}</div></div>`).join('') || '<div class="muted">No documents</div>'}</div>`;
+      document.getElementById('back').onclick = () => searchView(q);
+      window.scrollTo(0, 0);
+    } catch (err) { app.innerHTML = `<div class="err">${esc(err.message)}</div>`; }
+  }
+  document.getElementById('logout').onclick = async () => { try { await api('/api/auth/logout', {method:'POST'}); } catch {} token=''; sessionStorage.removeItem('cr_token'); loginView(); };
+  fetch('/api/system/status').then(r => r.json()).then(s => { if (s.clinic_name) document.getElementById('title').textContent = s.clinic_name; }).catch(() => {});
+  token ? searchView() : loginView();
+})();
+</script>
+</body>
+</html>

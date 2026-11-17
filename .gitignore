@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+desktop/src-tauri/binaries/*
+!desktop/src-tauri/binaries/.gitkeep
+desktop/test-results/
+desktop/playwright-report/
+*.crbak
+.DS_Store
