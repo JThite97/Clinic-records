@@ -54,6 +54,11 @@ class Origin:
     event_id: str | None = None
 
 
+def utc_iso(dt: datetime | None) -> str | None:
+    """Timestamps are stored as naive UTC; mark them so clients convert."""
+    return dt.isoformat() + "Z" if dt else None
+
+
 def _jsonable(v):
     if isinstance(v, (datetime, date)):
         return v.isoformat()
@@ -119,8 +124,8 @@ def patient_dict(p: Patient) -> dict:
     d.update(
         id=p.id,
         patient_number=p.patient_number,
-        created_at=_jsonable(p.created_at),
-        updated_at=_jsonable(p.updated_at),
+        created_at=utc_iso(p.created_at),
+        updated_at=utc_iso(p.updated_at),
         age=patient_age(p),
     )
     return d
@@ -155,7 +160,7 @@ def visit_dict(v: Visit) -> dict:
         locked=v.locked,
         created_by=v.created_by,
         device_id=v.device_id,
-        created_at=_jsonable(v.created_at),
+        created_at=utc_iso(v.created_at),
         prescription={
             "id": v.prescription.id if v.prescription else None,
             "notes": v.prescription.notes if v.prescription else "",
@@ -178,5 +183,5 @@ def document_dict(d: Document) -> dict:
         "sha256": d.sha256,
         "archived": d.archived,
         "uploaded_by": d.uploaded_by,
-        "uploaded_at": _jsonable(d.uploaded_at),
+        "uploaded_at": utc_iso(d.uploaded_at),
     }

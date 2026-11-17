@@ -50,8 +50,8 @@
   }
   function loginView(msg='') {
     document.getElementById('logout').hidden = true;
-    app.innerHTML = `<div class="card"><form id="f"><label>Username</label><input name="u" autocomplete="username" required>
-      <label>Password</label><input name="p" type="password" autocomplete="current-password" required>
+    app.innerHTML = `<div class="card"><form id="f"><label for="mu">Username</label><input id="mu" name="u" autocomplete="username" required>
+      <label for="mp">Password</label><input id="mp" name="p" type="password" autocomplete="current-password" required>
       <div style="margin-top:14px"><button>Log in</button></div><div class="err">${esc(msg)}</div></form></div>
       <p class="muted">This page shows patient records read-only. Records can only be changed in the desktop app.</p>`;
     document.getElementById('f').onsubmit = async e => {
@@ -65,7 +65,7 @@
   }
   function searchView(q='') {
     document.getElementById('logout').hidden = false;
-    app.innerHTML = `<input id="q" placeholder="Search name, P000123 or phone" value="${esc(q)}" autofocus><div id="res" class="card" style="margin-top:12px"></div>`;
+    app.innerHTML = `<input id="q" aria-label="Search patients" placeholder="Search name, P000123 or phone" value="${esc(q)}" autofocus><div id="res" class="card" style="margin-top:12px"></div>`;
     const qi = document.getElementById('q');
     let t;
     const run = async () => {

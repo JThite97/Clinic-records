@@ -39,7 +39,7 @@ def update_clinic(s: Session, changes: dict, actor: str) -> dict:
 
 def user_dict(u: User) -> dict:
     return {"id": u.id, "username": u.username, "full_name": u.full_name, "role": u.role, "active": u.active,
-            "created_at": u.created_at.isoformat()}
+            "created_at": u.created_at.isoformat() + "Z"}
 
 
 def check_password_rules(password: str) -> None:

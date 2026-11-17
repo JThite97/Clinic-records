@@ -160,7 +160,7 @@ def list_conflicts(s: Session, include_resolved: bool = False) -> list[dict]:
                 label = f"Visit {v.visit_date:%d %b %Y} - {p.full_name if p else ''}"
         out.append({"id": c.id, "entity": c.entity, "entity_id": c.entity_id, "label": label, "field": c.field, "kind": c.kind,
                     "kept_value": c.kept_value, "other_value": c.other_value, "kept_device": c.kept_device,
-                    "other_device": c.other_device, "resolved": c.resolved, "created_at": c.created_at.isoformat()})
+                    "other_device": c.other_device, "resolved": c.resolved, "created_at": c.created_at.isoformat() + "Z"})
     return out
 
 

@@ -263,7 +263,7 @@ def audit_log(limit: int = 200, offset: int = 0, entity_id: str | None = None, s
     stmt = select(AuditLog).order_by(AuditLog.id.desc()).offset(offset).limit(min(limit, 1000))
     if entity_id:
         stmt = stmt.where(AuditLog.entity_id == entity_id)
-    rows = [{"id": r.id, "ts": r.ts.isoformat(), "username": r.username, "action": r.action, "entity": r.entity,
+    rows = [{"id": r.id, "ts": r.ts.isoformat() + "Z", "username": r.username, "action": r.action, "entity": r.entity,
              "entity_id": r.entity_id, "details": r.details} for r in s.scalars(stmt)]
     ok, bad = verify_audit_chain(s)
     return {"entries": rows, "chain_ok": ok, "first_bad_id": bad}

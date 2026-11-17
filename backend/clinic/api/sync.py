@@ -40,8 +40,8 @@ def pairing_code(sess: UserSession = Depends(admin_user), state: AppState = Depe
 @router.get("/sync/devices")
 def devices(sess: UserSession = Depends(admin_user), s: Session = Depends(db_session)):
     rows = s.scalars(select(Device).order_by(Device.created_at.desc()))
-    return [{"id": d.id, "name": d.name, "revoked": d.revoked, "created_at": d.created_at.isoformat(),
-             "last_seen": d.last_seen.isoformat() if d.last_seen else None, "last_pull_seq": d.last_pull_seq} for d in rows]
+    return [{"id": d.id, "name": d.name, "revoked": d.revoked, "created_at": d.created_at.isoformat() + "Z",
+             "last_seen": d.last_seen.isoformat() + "Z" if d.last_seen else None, "last_pull_seq": d.last_pull_seq} for d in rows]
 
 
 @router.post("/sync/devices/{device_id}/revoke")
