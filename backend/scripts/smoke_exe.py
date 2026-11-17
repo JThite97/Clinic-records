@@ -19,8 +19,13 @@ exe = os.path.abspath(sys.argv[1])
 port = 8799
 home = tempfile.mkdtemp(prefix="clinic-smoke-")
 base = f"http://127.0.0.1:{port}"
+out_path = os.path.join(home, "server-output.txt")
+out_file = open(out_path, "wb")
 proc = subprocess.Popen([exe, "--home", home, "--port", str(port), "--parent-pid", str(os.getpid())],
-                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                        stdout=out_file, stderr=subprocess.STDOUT)
+
+import threading  # hard stop so CI can never hang on this script
+threading.Timer(240, lambda: (print("SMOKE FAILED: timed out"), proc.kill(), os._exit(1))).start()
 
 
 def call(method, path, body=None, token=None, raw=False):
@@ -37,17 +42,21 @@ def call(method, path, body=None, token=None, raw=False):
 
 
 def fail(msg):
-    print("SMOKE FAILED:", msg)
+    print("SMOKE FAILED:", msg, flush=True)
     alive = proc.poll() is None
     print("server alive:", alive, "exit code:", proc.returncode)
     if alive:
         proc.kill()
-    out = proc.stdout.read().decode("utf-8", "replace") if proc.stdout else ""
-    print("---- server output ----\n" + out[-6000:])
+    out_file.flush()
+    with open(out_path, "rb") as f:
+        print("---- server output ----\n" + f.read().decode("utf-8", "replace")[-6000:])
     log = os.path.join(home, "logs", "clinic.log")
     if os.path.exists(log):
         print("---- clinic.log ----\n" + open(log, encoding="utf-8").read()[-6000:])
-    sys.exit(1)
+    sys.stdout.flush()
+    if proc.poll() is None:
+        proc.kill()
+    os._exit(1)  # exit hard: a frozen child may still hold our pipes
 
 
 try:
@@ -86,11 +95,9 @@ try:
     time.sleep(5)
     if proc.poll() is not None:
         fail("server exited during the run")
-    print("SMOKE OK:", p["patient_number"], b["name"])
-except SystemExit:
-    raise
-except Exception as e:  # noqa: BLE001
-    fail(repr(e))
-finally:
+    print("SMOKE OK:", p["patient_number"], b["name"], flush=True)
     if proc.poll() is None:
         proc.kill()
+    os._exit(0)
+except Exception as e:  # noqa: BLE001
+    fail(repr(e))
