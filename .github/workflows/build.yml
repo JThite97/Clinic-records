@@ -1,0 +1,79 @@
+name: Test and build installers
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: desktop/package-lock.json }
+      - name: Backend tests
+        working-directory: backend
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements-dev.txt -e .
+          .venv/bin/python -m pytest
+      - name: UI typecheck, unit tests, build
+        working-directory: desktop
+        run: |
+          npm ci
+          npm run build
+          npm test
+      - name: End-to-end test
+        working-directory: desktop
+        run: |
+          npm install --no-save playwright@1.56.0
+          npx playwright install --with-deps chromium
+          npm run e2e
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm, cache-dependency-path: desktop/package-lock.json }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Build server sidecar (PyInstaller)
+        shell: bash
+        working-directory: backend
+        run: |
+          python -m pip install -r requirements-dev.txt
+          pyinstaller --noconfirm clinic-server.spec
+          TRIPLE=$(rustc -vV | sed -n 's/host: //p')
+          EXT=""; [ "$RUNNER_OS" = "Windows" ] && EXT=".exe"
+          mkdir -p ../desktop/src-tauri/binaries
+          cp dist/clinic-server$EXT ../desktop/src-tauri/binaries/clinic-server-$TRIPLE$EXT
+      - name: Build desktop app (Tauri)
+        working-directory: desktop
+        run: |
+          npm ci
+          npx tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClinicRecords-${{ runner.os }}
+          path: |
+            desktop/src-tauri/target/release/bundle/nsis/*.exe
+            desktop/src-tauri/target/release/bundle/msi/*.msi
+            desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            desktop/src-tauri/target/release/bundle/deb/*.deb
+            desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: ignore
