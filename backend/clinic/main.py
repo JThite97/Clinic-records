@@ -69,30 +69,51 @@ def _backup_loop(state: AppState, stop: threading.Event) -> None:
             log.exception("automatic backup failed")
 
 
-def _parent_watchdog(pid: int) -> None:
-    """Exit when the desktop shell that started us has gone away."""
+def _parent_alive(pid: int) -> bool:
+    """True unless we can positively tell that process ``pid`` has ended."""
+    if sys.platform.startswith("win"):
+        import ctypes
+        from ctypes import wintypes
 
-    def alive() -> bool:
-        if sys.platform.startswith("win"):
-            import ctypes
-
-            h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-            if not h:
-                return False
-            code = ctypes.c_ulong()
-            ctypes.windll.kernel32.GetExitCodeProcess(h, ctypes.byref(code))
-            ctypes.windll.kernel32.CloseHandle(h)
-            return code.value == 259  # STILL_ACTIVE
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        k32.OpenProcess.restype = wintypes.HANDLE
+        k32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        k32.WaitForSingleObject.restype = wintypes.DWORD
+        k32.CloseHandle.argtypes = [wintypes.HANDLE]
+        SYNCHRONIZE = 0x00100000
+        h = k32.OpenProcess(SYNCHRONIZE, False, pid)
+        if not h:
+            # 87 = ERROR_INVALID_PARAMETER: no such process. Anything else
+            # (e.g. access denied) is not proof that the shell has gone.
+            return ctypes.get_last_error() != 87
         try:
-            os.kill(pid, 0)
-            return True
-        except OSError:
-            return False
+            return k32.WaitForSingleObject(h, 0) != 0  # 0 = WAIT_OBJECT_0: process ended
+        finally:
+            k32.CloseHandle(h)
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
 
+
+def _parent_watchdog(pid: int) -> None:
+    """Exit when the desktop shell that started us has gone away (three
+    consecutive checks, so a transient error never stops the server)."""
+    misses = 0
     while True:
         time.sleep(2)
-        if not alive():
-            log.info("desktop shell exited; stopping server")
+        try:
+            alive = _parent_alive(pid)
+        except Exception:  # never let the watchdog itself kill the server
+            log.exception("parent check failed")
+            alive = True
+        misses = 0 if alive else misses + 1
+        if misses >= 3:
+            log.info("desktop shell (pid %s) exited; stopping server", pid)
             os._exit(0)
 
 
@@ -121,6 +142,10 @@ def create_app(home: Path | None = None, background: bool = True) -> FastAPI:
         allow_origin_regex=r"^(tauri://localhost|https?://tauri\.localhost|http://(localhost|127\.0\.0\.1)(:\d+)?)$",
         allow_methods=["*"],
         allow_headers=["*"],
+        # WebView2/Chromium send a Private Network Access preflight when the
+        # app page (tauri.localhost) calls the local server; without this the
+        # server answers 400 and the UI shows "Cannot reach the server".
+        allow_private_network=True,
     )
 
     @app.middleware("http")

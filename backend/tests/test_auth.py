@@ -72,3 +72,18 @@ def test_password_change_rewraps_key(client, admin):
 def test_last_admin_cannot_be_deactivated(client, admin):
     me = client.get("/api/auth/me", headers=admin).json()
     assert client.post(f"/api/users/{me['id']}/active/false", headers=admin).status_code == 400
+
+
+def test_cors_preflight_from_desktop_webview(client):
+    """Regression: the Windows WebView2 preflight (incl. private-network) must succeed."""
+    h = {"Origin": "http://tauri.localhost", "Access-Control-Request-Method": "POST",
+         "Access-Control-Request-Headers": "content-type,authorization",
+         "Access-Control-Request-Private-Network": "true"}
+    r = client.options("/api/system/setup", headers=h)
+    assert r.status_code == 200, r.text
+    assert r.headers["access-control-allow-origin"] == "http://tauri.localhost"
+    assert r.headers["access-control-allow-private-network"] == "true"
+    h["Origin"] = "tauri://localhost"
+    assert client.options("/api/system/setup", headers=h).status_code == 200
+    h["Origin"] = "https://evil.example"
+    assert client.options("/api/system/setup", headers=h).status_code == 400

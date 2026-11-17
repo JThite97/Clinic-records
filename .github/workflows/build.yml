@@ -62,6 +62,10 @@ jobs:
           EXT=""; [ "$RUNNER_OS" = "Windows" ] && EXT=".exe"
           mkdir -p ../desktop/src-tauri/binaries
           cp dist/clinic-server$EXT ../desktop/src-tauri/binaries/clinic-server-$TRIPLE$EXT
+      - name: Smoke-test the server binary (as the desktop app runs it)
+        shell: bash
+        working-directory: backend
+        run: python scripts/smoke_exe.py dist/clinic-server$([ "$RUNNER_OS" = "Windows" ] && echo .exe)
       - name: Build desktop app (Tauri)
         working-directory: desktop
         run: |
